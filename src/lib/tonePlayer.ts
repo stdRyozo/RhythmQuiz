@@ -63,18 +63,19 @@ export async function playMelody(
 
   const beatDuration = 60 / melody.bpm; // 秒/四分音符
 
-  // カウントイン: 4拍
-  const click = new Tone.MembraneSynth({
-    pitchDecay: 0.008,
-    octaves: 2,
-    envelope: { attack: 0.001, decay: 0.1, sustain: 0, release: 0.1 },
+  // カウントイン: 4拍（メトロノーム風クリック音）
+  const click = new Tone.Synth({
+    oscillator: { type: "triangle" },
+    envelope: { attack: 0.001, decay: 0.06, sustain: 0, release: 0.04 },
   }).toDestination();
-  click.volume.value = -6;
+  click.volume.value = 2;
 
   for (let i = 0; i < 4; i++) {
     const t = i * beatDuration;
+    // 1拍目は高音（アクセント）、2〜4拍目はやや低音
+    const pitch = i === 0 ? "A5" : "A4";
     transport.schedule((time) => {
-      click.triggerAttackRelease("C2", "16n", time);
+      click.triggerAttackRelease(pitch, "32n", time);
     }, t);
   }
 
