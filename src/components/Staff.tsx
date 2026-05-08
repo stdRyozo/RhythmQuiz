@@ -140,19 +140,26 @@ function StaffRow({
     tieHoverUnit !== null
       ? rowNotes.findIndex((n) => n.startUnit === tieHoverUnit)
       : -1;
-  // 同行内の次の音符（弧線プレビュー・ハイライト用）
-  const tieNextNoteInRow =
-    tieHoveredIdx >= 0 && tieHoveredIdx < rowNotes.length - 1
-      ? rowNotes[tieHoveredIdx + 1]
-      : null;
-  // 行末音符でのドラッグ: 次の行に音符があればタイをドロップ可能
+  // 同行内の次の音符（隣接している場合のみ）
   const tieHoveredNote = tieHoveredIdx >= 0 ? rowNotes[tieHoveredIdx] : null;
+  const tieNextNoteInRow = (() => {
+    if (!tieHoveredNote || tieHoveredIdx >= rowNotes.length - 1) return null;
+    const candidate = rowNotes[tieHoveredIdx + 1];
+    return candidate.startUnit === tieHoveredNote.startUnit + DURATION_UNITS[tieHoveredNote.duration]
+      ? candidate
+      : null;
+  })();
+  // 行末音符でのドラッグ: 次の行の先頭に隣接する音符があればタイをドロップ可能
   const tieHoveredIsLastInRow =
     tieHoveredNote !== null && tieHoveredIdx === rowNotes.length - 1;
   const tieCanDropCrossRow = !!(
     tieHoveredIsLastInRow &&
     tieHoveredNote &&
-    placedNotes.some((n) => n.startUnit > tieHoveredNote.startUnit)
+    placedNotes.some(
+      (n) =>
+        n.startUnit === tieHoveredNote.startUnit + DURATION_UNITS[tieHoveredNote.duration] &&
+        n.startUnit >= rowOffset + rowUnits
+    )
   );
 
   const occupied = new Set<number>();
@@ -292,6 +299,10 @@ function StaffRow({
             <TieArc key={`tie-end-${note.startUnit}`} x1={x1} x2={rowWidth - 3} color={noteColor} />
           );
         }
+        // 隣接している場合のみタイを描く
+        const isAdjacent =
+          nextNote.startUnit === note.startUnit + DURATION_UNITS[note.duration];
+        if (!isAdjacent) return null;
         const x2 = nextNote.localStart * UNIT_WIDTH + 6;
         return (
           <TieArc key={`tie-${note.startUnit}`} x1={x1} x2={x2} color={noteColor} />
@@ -425,7 +436,8 @@ export default function Staff({
     const rowEndsTie = !!(
       lastNote?.hasTieToNext &&
       nextAfterLast &&
-      nextAfterLast.startUnit >= rowOffset + rowUnits
+      nextAfterLast.startUnit >= rowOffset + rowUnits &&
+      nextAfterLast.startUnit === lastNote.startUnit + DURATION_UNITS[lastNote.duration]
     );
 
     let rowStartsTie = false;
@@ -435,7 +447,12 @@ export default function Staff({
         .filter((n) => n.startUnit >= prev.rowOffset && n.startUnit < prev.rowOffset + prev.rowUnits)
         .sort((a, b) => a.startUnit - b.startUnit);
       const prevLastNote = prevNotes[prevNotes.length - 1];
-      rowStartsTie = !!(prevLastNote?.hasTieToNext && rowNotesSorted[0]);
+      const firstNote = rowNotesSorted[0];
+      rowStartsTie = !!(
+        prevLastNote?.hasTieToNext &&
+        firstNote &&
+        firstNote.startUnit === prevLastNote.startUnit + DURATION_UNITS[prevLastNote.duration]
+      );
     }
 
     return { rowEndsTie, rowStartsTie };
