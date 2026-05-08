@@ -111,6 +111,8 @@ function StaffRow({
   isLastRow,
   rowEndsTie,
   rowStartsTie,
+  tieHoverUnit,
+  onTieHoverChange,
 }: {
   rowUnits: number;
   rowOffset: number;
@@ -125,9 +127,10 @@ function StaffRow({
   isLastRow: boolean;
   rowEndsTie: boolean;
   rowStartsTie: boolean;
+  tieHoverUnit: number | null;
+  onTieHoverChange: (unit: number | null) => void;
 }) {
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
-  const [tieHoverUnit, setTieHoverUnit] = useState<number | null>(null);
   const [chromaticHoverUnit, setChromaticHoverUnit] = useState<number | null>(null);
 
   const rowWidth = rowUnits * UNIT_WIDTH;
@@ -161,6 +164,13 @@ function StaffRow({
         n.startUnit >= rowOffset + rowUnits
     )
   );
+  // タイのターゲット音符のstartUnit（段またぎを含む全行で共通判定用）
+  const tieSourceNote = tieHoverUnit !== null
+    ? placedNotes.find((n) => n.startUnit === tieHoverUnit)
+    : null;
+  const tieTargetUnit = tieSourceNote
+    ? tieSourceNote.startUnit + DURATION_UNITS[tieSourceNote.duration]
+    : null;
 
   const occupied = new Set<number>();
   rowNotes.forEach((n) => {
@@ -199,7 +209,7 @@ function StaffRow({
       style={{ display: "block" }}
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setTieHoverUnit(null);
+          onTieHoverChange(null);
         }
       }}
     >
@@ -331,7 +341,7 @@ function StaffRow({
         const x = note.localStart * UNIT_WIDTH;
         const w = DURATION_UNITS[note.duration] * UNIT_WIDTH;
         const isTieHovered = note.startUnit === tieHoverUnit;
-        const isTieTarget = tieNextNoteInRow !== null && note.startUnit === tieNextNoteInRow.startUnit;
+        const isTieTarget = tieTargetUnit !== null && note.startUnit === tieTargetUnit;
         const isChromaticHovered = note.startUnit === chromaticHoverUnit;
         const baseColor = note.isChromatic ? "#dc2626" : noteColor;
         const effectiveColor =
@@ -360,20 +370,20 @@ function StaffRow({
                 onDragOver={(e) => {
                   if (e.dataTransfer.types.includes("tie")) {
                     e.preventDefault();
-                    setTieHoverUnit(note.startUnit);
+                    onTieHoverChange(note.startUnit);
                   } else if (e.dataTransfer.types.includes("chromatic")) {
                     e.preventDefault();
                     setChromaticHoverUnit(note.startUnit);
                   }
                 }}
                 onDragLeave={() => {
-                  setTieHoverUnit(null);
+                  onTieHoverChange(null);
                   setChromaticHoverUnit(null);
                 }}
                 onDrop={(e) => {
                   if (e.dataTransfer.getData("tie") === "true") {
                     e.preventDefault();
-                    setTieHoverUnit(null);
+                    onTieHoverChange(null);
                     onTieDrop(note.startUnit);
                   } else if (e.dataTransfer.getData("chromatic") === "true") {
                     e.preventDefault();
@@ -413,6 +423,8 @@ export default function Staff({
   readOnly = false,
   noteColor = "black",
 }: Props) {
+  const [tieHoverUnit, setTieHoverUnit] = useState<number | null>(null);
+
   const measuresPerRow = MEASURES_PER_ROW;
   const rowCount = Math.ceil(measures / measuresPerRow);
   const rows = Array.from({ length: rowCount }, (_, r) => {
@@ -514,6 +526,8 @@ export default function Staff({
             isLastRow={isLastRow}
             rowEndsTie={rowTieInfo[r].rowEndsTie}
             rowStartsTie={rowTieInfo[r].rowStartsTie}
+            tieHoverUnit={tieHoverUnit}
+            onTieHoverChange={setTieHoverUnit}
           />
         </div>
       ))}
