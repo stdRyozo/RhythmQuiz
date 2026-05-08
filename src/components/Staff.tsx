@@ -109,6 +109,8 @@ function StaffRow({
   readOnly,
   noteColor,
   isLastRow,
+  rowEndsTie,
+  rowStartsTie,
 }: {
   rowUnits: number;
   rowOffset: number;
@@ -121,6 +123,8 @@ function StaffRow({
   readOnly: boolean;
   noteColor: string;
   isLastRow: boolean;
+  rowEndsTie: boolean;
+  rowStartsTie: boolean;
 }) {
   const [dragOverCell, setDragOverCell] = useState<number | null>(null);
   const [tieHoverUnit, setTieHoverUnit] = useState<number | null>(null);
@@ -136,10 +140,20 @@ function StaffRow({
     tieHoverUnit !== null
       ? rowNotes.findIndex((n) => n.startUnit === tieHoverUnit)
       : -1;
-  const tieNextNote =
+  // 同行内の次の音符（弧線プレビュー・ハイライト用）
+  const tieNextNoteInRow =
     tieHoveredIdx >= 0 && tieHoveredIdx < rowNotes.length - 1
       ? rowNotes[tieHoveredIdx + 1]
       : null;
+  // 行末音符でのドラッグ: 次の行に音符があればタイをドロップ可能
+  const tieHoveredNote = tieHoveredIdx >= 0 ? rowNotes[tieHoveredIdx] : null;
+  const tieHoveredIsLastInRow =
+    tieHoveredNote !== null && tieHoveredIdx === rowNotes.length - 1;
+  const tieCanDropCrossRow = !!(
+    tieHoveredIsLastInRow &&
+    tieHoveredNote &&
+    placedNotes.some((n) => n.startUnit > tieHoveredNote.startUnit)
+  );
 
   const occupied = new Set<number>();
   rowNotes.forEach((n) => {
@@ -266,23 +280,38 @@ function StaffRow({
         </>
       )}
 
-      {/* タイ弧線 */}
+      {/* タイ弧線（同行内 + 段またぎ送り側） */}
       {rowNotes.map((note, idx) => {
         if (!note.hasTieToNext) return null;
         const nextNote = rowNotes[idx + 1];
-        if (!nextNote) return null;
         const x1 = note.localStart * UNIT_WIDTH + DURATION_UNITS[note.duration] * UNIT_WIDTH - 6;
+        if (!nextNote) {
+          // 段をまたぐタイ（rowEndsTie で確認済み）: 行の右端まで弧を描く
+          if (!rowEndsTie) return null;
+          return (
+            <TieArc key={`tie-end-${note.startUnit}`} x1={x1} x2={rowWidth - 3} color={noteColor} />
+          );
+        }
         const x2 = nextNote.localStart * UNIT_WIDTH + 6;
         return (
           <TieArc key={`tie-${note.startUnit}`} x1={x1} x2={x2} color={noteColor} />
         );
       })}
 
-      {/* タイドラッグ中: 弧線プレビュー */}
-      {tieHoveredIdx >= 0 && tieNextNote && (() => {
+      {/* 段をまたぐタイ: 行頭から最初の音符まで弧を描く */}
+      {rowStartsTie && rowNotes.length > 0 && (() => {
+        const firstNote = rowNotes[0];
+        const x2 = firstNote.localStart * UNIT_WIDTH + 6;
+        return <TieArc key="tie-row-start" x1={3} x2={x2} color={noteColor} />;
+      })()}
+
+      {/* タイドラッグ中: 弧線プレビュー（同行内 or 段またぎ） */}
+      {tieHoveredIdx >= 0 && (tieNextNoteInRow || tieCanDropCrossRow) && (() => {
         const hov = rowNotes[tieHoveredIdx];
         const x1 = hov.localStart * UNIT_WIDTH + DURATION_UNITS[hov.duration] * UNIT_WIDTH - 6;
-        const x2 = tieNextNote.localStart * UNIT_WIDTH + 6;
+        const x2 = tieNextNoteInRow
+          ? tieNextNoteInRow.localStart * UNIT_WIDTH + 6
+          : rowWidth - 3;
         return <TieArc x1={x1} x2={x2} color="#f59e0b" dashed />;
       })()}
 
@@ -291,7 +320,7 @@ function StaffRow({
         const x = note.localStart * UNIT_WIDTH;
         const w = DURATION_UNITS[note.duration] * UNIT_WIDTH;
         const isTieHovered = note.startUnit === tieHoverUnit;
-        const isTieTarget = tieNextNote !== null && note.startUnit === tieNextNote.startUnit;
+        const isTieTarget = tieNextNoteInRow !== null && note.startUnit === tieNextNoteInRow.startUnit;
         const isChromaticHovered = note.startUnit === chromaticHoverUnit;
         const baseColor = note.isChromatic ? "#dc2626" : noteColor;
         const effectiveColor =
@@ -382,6 +411,36 @@ export default function Staff({
     return { rowUnits, rowOffset, isLastRow: r === rowCount - 1 };
   });
 
+  // 各行の「段またぎタイ」フラグを計算
+  const rowTieInfo = rows.map(({ rowUnits, rowOffset }, r) => {
+    const rowNotesSorted = [...placedNotes]
+      .filter((n) => n.startUnit >= rowOffset && n.startUnit < rowOffset + rowUnits)
+      .sort((a, b) => a.startUnit - b.startUnit);
+    const lastNote = rowNotesSorted[rowNotesSorted.length - 1];
+    const nextAfterLast = lastNote
+      ? [...placedNotes]
+          .filter((n) => n.startUnit > lastNote.startUnit)
+          .sort((a, b) => a.startUnit - b.startUnit)[0]
+      : undefined;
+    const rowEndsTie = !!(
+      lastNote?.hasTieToNext &&
+      nextAfterLast &&
+      nextAfterLast.startUnit >= rowOffset + rowUnits
+    );
+
+    let rowStartsTie = false;
+    if (r > 0) {
+      const prev = rows[r - 1];
+      const prevNotes = [...placedNotes]
+        .filter((n) => n.startUnit >= prev.rowOffset && n.startUnit < prev.rowOffset + prev.rowUnits)
+        .sort((a, b) => a.startUnit - b.startUnit);
+      const prevLastNote = prevNotes[prevNotes.length - 1];
+      rowStartsTie = !!(prevLastNote?.hasTieToNext && rowNotesSorted[0]);
+    }
+
+    return { rowEndsTie, rowStartsTie };
+  });
+
   function addNote(startUnit: number, duration: NoteDuration) {
     const units = DURATION_UNITS[duration];
     const overlaps = placedNotes.some((n) => {
@@ -436,6 +495,8 @@ export default function Staff({
             readOnly={readOnly}
             noteColor={noteColor}
             isLastRow={isLastRow}
+            rowEndsTie={rowTieInfo[r].rowEndsTie}
+            rowStartsTie={rowTieInfo[r].rowStartsTie}
           />
         </div>
       ))}
