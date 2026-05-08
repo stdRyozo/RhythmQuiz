@@ -30,8 +30,11 @@ function buildPrompt(req: GenerateMelodyRequest): string {
 
   const tonicPc = KEY_TO_PC[req.key];
   const thirdPc = (tonicPc + (req.mode === "major" ? 4 : 3)) % 12;
+  const fifthPc = (tonicPc + 7) % 12;
   const tonicMidis = diatonic.filter((m) => m % 12 === tonicPc);
   const thirdMidis = diatonic.filter((m) => m % 12 === thirdPc);
+  const fifthMidis = diatonic.filter((m) => m % 12 === fifthPc);
+  const allowedFirstMidis = [...new Set([...tonicMidis, ...thirdMidis, ...fifthMidis])].sort((a, b) => a - b);
 
   const chromaticSection = req.includeChromaticNote
     ? `\nCHROMATIC NOTE RULE (MANDATORY — you will be penalized if you ignore this):\n` +
@@ -53,6 +56,9 @@ function buildPrompt(req: GenerateMelodyRequest): string {
     `\n` +
     `MANDATORY rule for measure 1: it MUST contain at least one note with pitch from [${tonicMidis.join(", ")}] (tonic = ${req.key}) ` +
     `AND at least one note with pitch from [${thirdMidis.join(", ")}] (3rd degree).\n` +
+    `\n` +
+    `FIRST NOTE RULE (MANDATORY): The note with startTime=0 MUST have its pitch from [${allowedFirstMidis.join(", ")}] (tonic, 3rd, or 5th degree of ${req.key} ${req.mode}). No other pitch is allowed for the first note.\n` +
+    `LAST NOTE RULE (MANDATORY): The note with the highest startTime MUST have its pitch from [${tonicMidis.join(", ")}] (tonic = ${req.key}). No other pitch is allowed for the last note.\n` +
     `\n` +
     `Generate a JSON array of notes. Each note: { pitch (MIDI integer), duration ("8n"|"4n"|"4n."), startTime (eighth-note unit position, 0-based) }.\n` +
     `The sum of all note durations in units must equal exactly ${totalUnits}.`
